@@ -2,12 +2,14 @@ package com.zeus.remote.shield
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
 import java.io.File
 import java.math.BigInteger
 import java.net.Socket
 import java.security.KeyPairGenerator
+import java.security.KeyFactory
 import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.Principal
@@ -33,7 +35,11 @@ internal class ShieldCredentials(context: Context, private val host: String) {
             KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, "AndroidKeyStore").apply {
                 initialize(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY)
                     .setKeySize(2048)
-                    .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384, KeyProperties.DIGEST_SHA512)
+                    .setDigests(KeyProperties.DIGEST_NONE, KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384, KeyProperties.DIGEST_SHA512)
+                    // Conscrypt applies TLS PSS padding itself, then calls RSA/ECB/NoPadding
+                    // with this opaque key. This permission is for TLS signing, not data encryption.
+                    // See https://github.com/google/conscrypt/issues/718 and /issues/1201.
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                     .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1, KeyProperties.SIGNATURE_PADDING_RSA_PSS)
                     .setCertificateSubject(X500Principal("CN=Zeus Universal Remote"))
                     .setCertificateSerialNumber(BigInteger.ONE)
@@ -43,7 +49,14 @@ internal class ShieldCredentials(context: Context, private val host: String) {
                 generateKeyPair()
             }
         }
-        return store.getEntry(alias, null) as KeyStore.PrivateKeyEntry
+        val entry = store.getEntry(alias, null) as KeyStore.PrivateKeyEntry
+        val info = KeyFactory.getInstance(KeyProperties.KEY_ALGORITHM_RSA, "AndroidKeyStore")
+            .getKeySpec(entry.privateKey, KeyInfo::class.java)
+        check(KeyProperties.ENCRYPTION_PADDING_NONE in info.encryptionPaddings &&
+            KeyProperties.DIGEST_NONE in info.digests) {
+            "This Shield key needs a TLS compatibility update. Tap Forget Shield, then Pair Shield to create a new key."
+        }
+        return entry
     }
 
     fun context(pairing: Boolean): SSLContext {

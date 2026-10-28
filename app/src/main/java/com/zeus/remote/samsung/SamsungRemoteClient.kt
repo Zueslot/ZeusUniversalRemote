@@ -5,6 +5,10 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Base64
 import com.zeus.remote.data.DeviceRepository
+import com.zeus.remote.power.WakeOnLan
+import com.zeus.shared.isPrivateIpv4
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.*
 import org.json.JSONObject
 import java.security.SecureRandom
@@ -17,12 +21,17 @@ import javax.net.ssl.X509TrustManager
 /** Owns Samsung's socket and authorization. Call public methods on the main thread. */
 class SamsungRemoteClient(
     private val devices: DeviceRepository,
-    private val onState: (connected: Boolean, message: String) -> Unit
+    private val onState: (connected: Boolean, message: String) -> Unit,
+    private val onDisconnected: () -> Unit = {}
 ) : AutoCloseable {
     private val main = Handler(Looper.getMainLooper())
     private val safeClient = OkHttpClient.Builder().connectTimeout(5, TimeUnit.SECONDS).build()
     private var socket: WebSocket? = null
     var connected = false
+        private set
+    var connecting = false
+        private set
+    var authorizationDenied = false
         private set
 
     // Preserve the existing explicit opt-in, limited to the validated private TV endpoint.
@@ -41,11 +50,13 @@ class SamsungRemoteClient(
 
     fun connect(address: String, trustSelfSigned: Boolean) {
         val ip = address.trim()
-        if (!Regex("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)\\d{1,3}(\\.\\d{1,3}){2}$").matches(ip)) {
+        if (!isPrivateIpv4(ip)) {
             onState(connected, "Enter a private-network IPv4 address for the TV.")
             return
         }
         close()
+        connecting = true
+        authorizationDenied = false
         onState(false, "Connecting to Samsung TV. Approve Zeus on the TV if prompted…")
         val name = Base64.encodeToString("Zeus Universal Remote".toByteArray(), Base64.NO_WRAP)
         val token = devices.samsungToken
@@ -68,10 +79,13 @@ class SamsungRemoteClient(
                             val tokenValue = message.optJSONObject("data")?.optString("token").orEmpty()
                             if (tokenValue.isNotBlank()) devices.samsungToken = tokenValue
                             connected = true
+                            connecting = false
                             onState(true, "Samsung authorized. TV controls are ready.")
                         }
                         "ms.channel.unauthorized", "ms.channel.timeOut" -> {
                             connected = false
+                            connecting = false
+                            authorizationDenied = true
                             onState(false, "Samsung denied or timed out. Check TV device authorization.")
                         }
                     }
@@ -79,11 +93,15 @@ class SamsungRemoteClient(
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = update(webSocket) {
                 connected = false
+                connecting = false
                 onState(false, "Samsung connection failed: ${t.message ?: t.javaClass.simpleName}")
+                onDisconnected()
             }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = update(webSocket) {
                 connected = false
+                connecting = false
                 onState(false, "Samsung disconnected: $reason")
+                onDisconnected()
             }
         })
     }
@@ -96,6 +114,26 @@ class SamsungRemoteClient(
         return socket?.send(payload) == true
     }
 
+    suspend fun discoverWakeMac(address: String, trustSelfSigned: Boolean): String? =
+        readDevice(address, trustSelfSigned)?.let { WakeOnLan.normalizeMac(it.optString("wifiMac")) }
+
+    suspend fun readPowerState(address: String, trustSelfSigned: Boolean): String? =
+        readDevice(address, trustSelfSigned, timeoutSeconds = 2)?.optString("PowerState")?.lowercase()
+
+    private suspend fun readDevice(address: String, trustSelfSigned: Boolean, timeoutSeconds: Long = 7): JSONObject? = withContext(Dispatchers.IO) {
+        if (!isPrivateIpv4(address)) return@withContext null
+        try {
+            val client = (if (trustSelfSigned) lanTvClient() else safeClient).newBuilder()
+                .readTimeout(timeoutSeconds, TimeUnit.SECONDS).callTimeout(timeoutSeconds, TimeUnit.SECONDS).followRedirects(false).build()
+            client.newCall(Request.Builder().url("https://$address:8002/api/v2/").build()).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val body = response.body ?: return@use null
+                if (body.contentLength() > 1024 * 1024) return@use null
+                JSONObject(body.string()).optJSONObject("device")
+            }
+        } catch (_: Exception) { null }
+    }
+
     fun forget() {
         close()
         devices.forgetSamsungToken()
@@ -106,6 +144,7 @@ class SamsungRemoteClient(
         val previous = socket
         socket = null
         connected = false
+        connecting = false
         previous?.close(1000, "Connection closed")
     }
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import android.view.KeyEvent
 
 data class ShieldState(
     val message: String = "Pair Shield to enable navigation.",
@@ -33,6 +34,27 @@ class ShieldController(context: Context, private val scope: CoroutineScope) : Au
     fun disconnect() {
         stop()
         mutableState.value = ShieldState("Shield disconnected.")
+    }
+
+    /** Restore an existing identity without initiating a fresh PIN pairing prompt. */
+    fun reconnectSaved(address: String) {
+        if (!privateIpv4(address.trim())) return
+        stop()
+        val run = generation
+        val target = address.trim()
+        mutableState.value = ShieldState("Restoring Shield connection...", busy = true)
+        task = scope.launch {
+            try {
+                val paired = runInterruptible(Dispatchers.IO) { ShieldCredentials(appContext, target).isPaired() }
+                if (generation == run) {
+                    if (paired) connect(target) else mutableState.value = ShieldState()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (generation == run) mutableState.value = ShieldState("Could not restore Shield: ${detail(e)}")
+            }
+        }
     }
 
     fun pair(address: String) {
@@ -153,6 +175,21 @@ class ShieldController(context: Context, private val scope: CoroutineScope) : Au
                     client.close() // Wake the reader and let its reconnect loop recover.
                 }
             }
+        }
+    }
+
+    suspend fun sendPowerCommand(wake: Boolean): Boolean {
+        val client = remote ?: return false
+        if (!state.value.connected) return false
+        return try {
+            client.sendKey(if (wake) KeyEvent.KEYCODE_WAKEUP else KeyEvent.KEYCODE_SLEEP)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            client.close()
+            mutableState.value = ShieldState("Shield power request failed: ${detail(e)}", busy = true)
+            false
         }
     }
 

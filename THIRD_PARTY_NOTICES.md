@@ -12,3 +12,12 @@ The reference implementation is Apache-2.0; its license is distributed in
 Shield pairing and remote negotiation were implemented using that reference:
 https://github.com/tronikos/androidtvremote2/blob/main/src/androidtvremote2/pairing.py
 https://github.com/tronikos/androidtvremote2/blob/main/src/androidtvremote2/remote.py
+
+# QR scanning and encoding
+
+Phone QR scanning uses JourneyApps ZXing Android Embedded 4.3.0
+(https://github.com/journeyapps/zxing-android-embedded), under Apache-2.0.
+The TV companion uses ZXing Core 3.5.3 (https://github.com/zxing/zxing),
+also Apache-2.0. A copy of the Apache-2.0 license is bundled by the shared module
+at `assets/licenses/Apache-2.0.txt` in both APKs. The libraries are used as dependencies;
+their source code has not been copied or modified.
