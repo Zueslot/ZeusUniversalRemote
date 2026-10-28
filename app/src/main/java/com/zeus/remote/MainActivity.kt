@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
                 var connected by remember { mutableStateOf(false) }
                 var inputJob by remember { mutableStateOf<Job?>(null) }
                 var selectingInput by remember { mutableStateOf(false) }
+                var fastInput by remember { mutableStateOf(prefs.getBoolean("fast_hdmi_input", true)) }
                 LaunchedEffect(connected) {
                     if (!connected) inputJob?.cancel()
                 }
@@ -160,6 +161,13 @@ class MainActivity : ComponentActivity() {
                     Text(status, color = MaterialTheme.colorScheme.onSurface)
                     HorizontalDivider()
                     Text("Samsung controls", style = MaterialTheme.typography.titleMedium)
+                    Row {
+                        Checkbox(checked = fastInput, onCheckedChange = {
+                            fastInput = it
+                            prefs.edit().putBoolean("fast_hdmi_input", it).apply()
+                        }, enabled = !selectingInput)
+                        Text("Faster HDMI selection (about 7 seconds). Turn off for the tested 32-second timing.")
+                    }
                     Button(onClick = {
                         if (selectingInput) return@Button
                         val socket = tvSocket
@@ -168,6 +176,7 @@ class MainActivity : ComponentActivity() {
                             return@Button
                         }
                         selectingInput = true
+                        val useFastTiming = fastInput
                         inputJob = scope.launch {
                             try {
                                 status = "Preparing HDMI 1 selection..."
@@ -188,7 +197,14 @@ class MainActivity : ComponentActivity() {
                                         return@launch
                                     }
                                     status = "Selecting HDMI 1: step ${index + 1}/${keys.size}."
-                                    delay(2000)
+                                    val pauseMs = when {
+                                        !useFastTiming -> 2000L
+                                        key == "KEY_SOURCE" -> 2000L
+                                        index == keys.lastIndex - 1 -> 1000L // Let HDMI 1 focus settle before OK.
+                                        key == "KEY_ENTER" -> 500L
+                                        else -> 100L
+                                    }
+                                    delay(pauseMs)
                                 }
                                 status = "HDMI 1 sequence sent. Confirm the Shield picture on the TV."
                             } finally {
@@ -199,7 +215,7 @@ class MainActivity : ComponentActivity() {
                         Text(if (selectingInput) "Selecting HDMI 1..." else "HDMI 1 / Shield")
                     }
                     if (selectingInput) {
-                        Text("Selecting HDMI 1 takes about 32 seconds. Leave the TV menu and physical remote untouched.")
+                        Text("Selecting HDMI 1 takes about ${if (fastInput) 7 else 32} seconds. Leave the TV menu and physical remote untouched.")
                         OutlinedButton(onClick = {
                             inputJob?.cancel()
                             status = "HDMI 1 selection cancelled. The TV menu may remain open."
