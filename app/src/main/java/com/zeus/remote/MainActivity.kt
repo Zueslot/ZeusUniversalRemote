@@ -13,6 +13,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.*
@@ -63,7 +65,13 @@ class MainActivity : ComponentActivity() {
                 var allowSelfSigned by remember { mutableStateOf(prefs.getBoolean("tv_self_signed", false)) }
                 var status by remember { mutableStateOf("Connect to the Samsung TV to authorize Zeus Remote.") }
                 var connected by remember { mutableStateOf(false) }
+                var inputJob by remember { mutableStateOf<Job?>(null) }
+                var selectingInput by remember { mutableStateOf(false) }
+                LaunchedEffect(connected) {
+                    if (!connected) inputJob?.cancel()
+                }
                 fun connectSamsung() {
+                    inputJob?.cancel()
                     val ip = samsung.trim()
                     if (!Regex("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)\\d{1,3}(\\.\\d{1,3}){2}$").matches(ip)) {
                         status = "Enter a private-network IPv4 address for the TV."
@@ -112,6 +120,7 @@ class MainActivity : ComponentActivity() {
                     })
                 }
                 fun sendTvKey(key: String) {
+                    if (selectingInput) { return }
                     if (!connected || !tvConnected) { status = "Connect and authorize Samsung first."; return }
                     val payload = JSONObject().put("method", "ms.remote.control")
                         .put("params", JSONObject().put("Cmd", "Click")
@@ -130,6 +139,7 @@ class MainActivity : ComponentActivity() {
                     Row { Checkbox(allowSelfSigned, { allowSelfSigned = it; prefs.edit().putBoolean("tv_self_signed", it).apply() }); Text("Trust Samsung TV self-signed certificate on local network", modifier = Modifier.padding(top = 12.dp)) }
                     Button(onClick = { connectSamsung() }, modifier = Modifier.fillMaxWidth()) { Text(if (connected) "Reconnect Samsung TV" else "Pair / Connect Samsung TV") }
                     OutlinedButton(onClick = {
+                        inputJob?.cancel()
                         tvSocket?.close(1000, "Forget authorization")
                         prefs.edit().remove("samsung_token").apply(); token = ""; connected = false; tvConnected = false
                         status = "Samsung token cleared. Reconnect to request TV authorization."
@@ -150,6 +160,51 @@ class MainActivity : ComponentActivity() {
                     Text(status, color = MaterialTheme.colorScheme.onSurface)
                     HorizontalDivider()
                     Text("Samsung controls", style = MaterialTheme.typography.titleMedium)
+                    Button(onClick = {
+                        if (selectingInput) return@Button
+                        val socket = tvSocket
+                        if (!connected || socket == null) {
+                            status = "Connect and authorize Samsung first."
+                            return@Button
+                        }
+                        selectingInput = true
+                        inputJob = scope.launch {
+                            try {
+                                status = "Preparing HDMI 1 selection..."
+                                delay(2000)
+                                val keys = listOf("KEY_SOURCE") + List(10) { "KEY_LEFT" } +
+                                    List(3) { "KEY_RIGHT" } + "KEY_ENTER"
+                                for ((index, key) in keys.withIndex()) {
+                                    if (!connected || tvSocket !== socket) {
+                                        status = "HDMI 1 selection stopped: Samsung connection changed."
+                                        return@launch
+                                    }
+                                    val payload = JSONObject().put("method", "ms.remote.control")
+                                        .put("params", JSONObject().put("Cmd", "Click")
+                                            .put("DataOfCmd", key).put("Option", "false")
+                                            .put("TypeOfRemote", "SendRemoteKey")).toString()
+                                    if (!socket.send(payload)) {
+                                        status = "HDMI 1 selection stopped: reconnect Samsung."
+                                        return@launch
+                                    }
+                                    status = "Selecting HDMI 1: step ${index + 1}/${keys.size}."
+                                    delay(2000)
+                                }
+                                status = "HDMI 1 sequence sent. Confirm the Shield picture on the TV."
+                            } finally {
+                                selectingInput = false
+                            }
+                        }
+                    }, enabled = connected && !selectingInput, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (selectingInput) "Selecting HDMI 1..." else "HDMI 1 / Shield")
+                    }
+                    if (selectingInput) {
+                        Text("Selecting HDMI 1 takes about 32 seconds. Leave the TV menu and physical remote untouched.")
+                        OutlinedButton(onClick = {
+                            inputJob?.cancel()
+                            status = "HDMI 1 selection cancelled. The TV menu may remain open."
+                        }) { Text("Cancel input selection") }
+                    }
                     Text("Select HDMI 1: open Source and use the TV navigation below to select HDMI 1 or your Shield. If Source does nothing, open TV Home and navigate to Connected Devices.")
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(
