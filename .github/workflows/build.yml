@@ -52,8 +52,8 @@ jobs:
             "build-tools;35.0.0"
         shell: bash
 
-      - name: Build Zeus Universal Remote
-        run: gradle :app:assembleDebug --stacktrace
+      - name: Build and check Zeus Universal Remote
+        run: gradle :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
