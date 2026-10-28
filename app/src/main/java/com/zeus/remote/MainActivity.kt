@@ -152,7 +152,7 @@ class MainActivity : ComponentActivity() {
                     Text("Samsung controls", style = MaterialTheme.typography.titleMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { sendTvKey("KEY_POWER") }) { Text("TV Power") }
-                        OutlinedButton(onClick = { sendTvKey("KEY_HDMI1") }) { Text("HDMI 1") }
+                        OutlinedButton(onClick = { sendTvKey("KEY_SOURCE") }) { Text("Source") }
                         OutlinedButton(onClick = { sendTvKey("KEY_MUTE") }) { Text("Mute") }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
