@@ -1,22 +1,19 @@
-# Zeus Universal Remote — Android prototype 0.1
+# Zeus Universal Remote v0.2.0
 
-Targets: Samsung S95B (Wi-Fi), NVIDIA Shield Pro (Ethernet), HDMI 1.
+This is an Android connectivity and Samsung control prototype, not a complete universal remote.
 
-## What works
-- Native Android app with dark Compose UI.
-- Editable, locally persisted device IP addresses.
-- Real TCP connectivity tests for Samsung port 8002 and Shield ports 6467/6466.
-- Remote and five app tiles shown as non-operational placeholders, clearly labeled.
+## What's new
+- Samsung S95B secure WebSocket authorization on port 8002 with token persistence
+- Samsung volume, mute, power and HDMI 1 key requests
+- Explicit opt-in for the TV's self-signed TLS certificate, restricted to a private IPv4 address
+- Improved dark UI contrast
+- Shield TCP reachability diagnostics retained
 
-## Not yet implemented
-- Samsung TLS trust, authorization token pairing, and remote commands.
-- NVIDIA Android TV Remote v2 encrypted pairing/control.
-- Reliable power-on, HDMI switching, app launching, and recent-apps command.
+## Known limitations
+- Samsung TV must be on and approve the remote authorization prompt. Some firmware may reject certain keys (especially direct HDMI and power-on).
+- Power-on from standby is not implemented; Wake-on-LAN/CEC would need additional work.
+- NVIDIA Shield Remote v2 TLS pairing/control is **not implemented**. Shield navigation and app launch buttons are intentionally disabled.
+- This source has not been compiled or tested against the physical devices here. Run GitHub Actions to verify compilation.
 
-## Build
-Open this directory in Android Studio (JDK 17, Android SDK 35). Sync Gradle and run on an Android phone connected to your home Wi-Fi. Android Studio can build an APK using Build > Build Bundle(s) / APK(s) > Build APK(s).
-
-This environment does not have the Android SDK/Gradle available, so an APK has **not** been compiled or verified here. Do not install APKs from unknown sources.
-
-## Network troubleshooting
-Phone must be on the home LAN, not guest Wi-Fi or a VPN that blocks LAN access. TCP success means only that the port is reachable, not that remote pairing works. Some Shield firmware versions may expose different behavior on the listed ports.
+## Install
+Upload the contents of this ZIP into the GitHub repository preserving directory structure, then run the existing GitHub Actions `Build Android APK` workflow.
