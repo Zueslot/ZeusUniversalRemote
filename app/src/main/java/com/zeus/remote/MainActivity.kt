@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
                         .put("params", JSONObject().put("Cmd", "Click")
                             .put("DataOfCmd", key).put("Option", "false").put("TypeOfRemote", "SendRemoteKey"))
                         .toString()
-                    if (tvSocket?.send(payload) == true) status = "Sent $key to Samsung TV"
+                    if (tvSocket?.send(payload) == true) status = "Queued $key; confirm the result on the TV."
                     else status = "Samsung connection is unavailable; reconnect."
                 }
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -150,6 +150,21 @@ class MainActivity : ComponentActivity() {
                     Text(status, color = MaterialTheme.colorScheme.onSurface)
                     HorizontalDivider()
                     Text("Samsung controls", style = MaterialTheme.typography.titleMedium)
+                    Text("Select HDMI 1: open Source and use the TV navigation below to select HDMI 1 or your Shield. If Source does nothing, open TV Home and navigate to Connected Devices.")
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            listOf("TV Home" to "KEY_HOME", "Up" to "KEY_UP"),
+                            listOf("Left" to "KEY_LEFT", "OK" to "KEY_ENTER", "Right" to "KEY_RIGHT"),
+                            listOf("TV Back" to "KEY_RETURN", "Down" to "KEY_DOWN"),
+                            listOf("TV Exit" to "KEY_EXIT")
+                        ).forEach { buttons ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                buttons.forEach { (label, key) ->
+                                    OutlinedButton(onClick = { sendTvKey(key) }, enabled = connected) { Text(label) }
+                                }
+                            }
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { sendTvKey("KEY_POWER") }) { Text("TV Power") }
                         OutlinedButton(onClick = { sendTvKey("KEY_SOURCE") }) { Text("Source") }

@@ -17,4 +17,8 @@ This is an Android connectivity and Samsung control prototype, not a complete un
 - This source has not been compiled or tested against the physical devices here. Run GitHub Actions to verify compilation.
 
 ## Install
+Build and install the APK, connect Samsung, and press Source. Use the Samsung navigation buttons to highlight HDMI 1 (possibly named Shield) and press OK. If Source does nothing, press TV Home and navigate to Connected Devices. Report which route worked, the displayed device name, and the exact button sequence. Check volume and mute still work.
+
+These controls navigate the Samsung TV; they are not Shield Remote v2 controls. A queued key does not confirm execution. Automatic input selection and HDMI-CEC coordination remain unimplemented pending device testing.
+
 Upload the contents of this ZIP into the GitHub repository preserving directory structure, then run the existing GitHub Actions `Build Android APK` workflow.
