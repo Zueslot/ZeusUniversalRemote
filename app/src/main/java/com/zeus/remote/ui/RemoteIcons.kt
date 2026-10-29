@@ -60,9 +60,14 @@ fun RemoteSymbol(icon: RemoteIcon, modifier: Modifier, color: Color = MaterialTh
                 path(8f to 10f, 16f to 10f, 14f to 15f, 10f to 15f, closed = true)
             }
             RemoteIcon.Settings -> {
-                drawCircle(color, 4 * scale, point(12f, 12f), style = Stroke(1.65f * scale))
-                drawCircle(color, 8 * scale, point(12f, 12f), style = Stroke(1.65f * scale))
-                line(12f, 1f, 12f, 4f); line(12f, 20f, 12f, 23f); line(1f, 12f, 4f, 12f); line(20f, 12f, 23f, 12f)
+                val teeth = Array(32) { index ->
+                    val angle = index * Math.PI / 16.0 - Math.PI / 2.0
+                    val radius = if (index % 4 == 1 || index % 4 == 2) 10.5f else 8f
+                    (12f + radius * kotlin.math.cos(angle).toFloat()) to
+                        (12f + radius * kotlin.math.sin(angle).toFloat())
+                }
+                path(*teeth, closed = true)
+                drawCircle(color, 3.5f * scale, point(12f, 12f), style = Stroke(1.65f * scale))
             }
             RemoteIcon.Remote -> {
                 drawRoundRect(color, point(6f, 1f), Size(12 * scale, 22 * scale), CornerRadius(4 * scale), style = Stroke(1.65f * scale))

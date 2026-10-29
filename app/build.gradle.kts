@@ -2,6 +2,7 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id(
 android { namespace = "com.zeus.remote"; compileSdk = 35
     defaultConfig {
         applicationId = "com.zeus.remote"; minSdk = 26; targetSdk = 35; versionCode = 2; versionName = "0.2.0"
+        testInstrumentationRunner = "com.zeus.remote.RemoteSmokeInstrumentation"
         manifestPlaceholders["appLabel"] = "Zeus Remote"
     }
     buildTypes {

@@ -36,13 +36,6 @@ class PowerController(
         }
     }
 
-    private suspend fun ensureShield(): Boolean {
-        if (shield.state.value.connected) return true
-        if (shield.state.value.needsPin) return false
-        if (!shield.state.value.busy && !shield.state.value.needsPin) shield.reconnectSaved(devices.shieldAddress)
-        return withTimeoutOrNull(20000) { shield.state.first { it.connected }; true } ?: false
-    }
-
     private suspend fun wakeBoth() {
         val mac = WakeOnLan.normalizeMac(devices.samsungMac)
         var wolSent = false
@@ -53,7 +46,7 @@ class PowerController(
             catch (e: Exception) { wolError = e.message }
         }
         mutable.value = PowerState(true, "Connecting to Shield to send Wake. TV wake uses CEC${if (wolSent) " and Wake-on-LAN" else ""}...")
-        val shieldSent = ensureShield() && shield.sendPowerCommand(wake = true)
+        val shieldSent = shield.setPower(devices.shieldAddress, wake = true)
         // Force a fresh authorization check: the old socket may still look open during standby.
         samsung.connect(devices.samsungAddress, devices.trustSamsungCertificate)
         mutable.value = PowerState(true, "Wake requests sent. Waiting up to 45 seconds for Samsung authorization...")
@@ -64,7 +57,7 @@ class PowerController(
             withTimeoutOrNull(40000) { samsung.state.first { !it.selectingInput } }
         }
         mutable.value = PowerState(false, buildString {
-            append(if (shieldSent) "Shield Wake sent. " else "Shield could not be reached; check pairing and standby network access. ")
+            append(if (shieldSent) "Shield confirmed awake. " else "Shield wake was not confirmed; check pairing and standby network access. ")
             append(if (tvReady) "Samsung authorized. Confirm both devices and HDMI input on the TV."
                 else "Samsung has not reconnected. Enable Power On with Mobile/Anynet+ and Shield CEC TV-on, and check the TV MAC address.")
             if (mac == null) append(" TV MAC is missing; direct Wake-on-LAN was not sent.")
@@ -76,9 +69,9 @@ class PowerController(
         val tvSent = samsung.requestStandby()
         // Give Samsung's working power key time to take effect before Shield CEC sleep.
         if (tvSent) delay(1000)
-        val shieldSent = ensureShield() && shield.sendPowerCommand(wake = false)
+        val shieldSent = shield.setPower(devices.shieldAddress, wake = false)
         mutable.value = PowerState(false, buildString {
-            append(if (shieldSent) "Shield Sleep sent; HDMI-CEC can put Samsung in standby. " else "Shield Sleep could not be sent. ")
+            append(if (shieldSent) "Shield confirmed standby; HDMI-CEC can put Samsung in standby. " else "Shield standby was not confirmed. ")
             append(if (tvSent) "Samsung reported on; its power key was sent. " else "Samsung could not confirm it was on; TV-off depends on Shield CEC. ")
             append("Confirm both devices are in standby.")
         })

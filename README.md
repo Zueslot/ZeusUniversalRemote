@@ -3,6 +3,7 @@
 This is an Android Samsung/Shield remote prototype, not a complete universal remote.
 
 ## What's new
+- Shield pairing now uses a stable unique client name and certificate CN per phone installation. To migrate existing phones, update each phone and use Pair Shield once on each; legacy credentials are replaced only when explicitly starting pairing. Two-phone coexistence requires device validation. Each phone may scan the existing companion QR for app launching; do not reset companion access between phones, as that revokes the shared QR token.
 - Assigning an installed Shield app to a favorite immediately displays its actual name on the remote, Apps favorites and layout picker. Names are cached per Shield address for offline/restart display; the four slot IDs and positions remain stable. The assignment picker numbers slots so duplicate app names can still be distinguished.
 - The glass remote now has four favorites: SmartTube, Nuvio, PLAYFy TV and Reezen. Streamio remains in the installed-app catalog if installed, but is retired from favorite slots. Menu, Home and Back use matching glass pills with a simple left arrow for Back. App tiles retain their taller glass cards, colored symbols and labels. Existing version-2 layouts realign once to the centered D-pad, navigation row and evenly spaced favorites; new edits save as version 3.
 - Samsung S95B secure WebSocket authorization on port 8002 with token persistence
@@ -51,7 +52,9 @@ If an earlier APK failed with `RSA routines:OPENSSL_internal:internal error`, in
 3. Enter all six characters shown by Shield (hexadecimal: 0–9 and A–F) and tap **Confirm pairing**. The request expires after two minutes; restart pairing if needed.
 4. Wait for **Connected and authenticated**, then test Up/Down/Left/Right, OK, Back and Home. Test playback buttons inside an app that supports them.
 5. Tap Disconnect, then Connect Shield: it should reconnect without another code. Repeat after closing and reopening the app.
-6. Briefly disconnect Shield's network and restore it. Zeus makes up to five reconnect attempts with backoff. Tap Connect if retries run out. Cancelling or changing the Shield IP closes its active sockets.
+6. Briefly disconnect Shield's network and restore it. Zeus continues retrying with backoff capped at 30 seconds while its controller is alive. Returning to the foreground refreshes a stale session. Explicit Disconnect, Forget, PIN pairing or a changed/unverified certificate stops automatic recovery. Cancelling or changing the Shield IP closes its active sockets.
+
+Power always restores a fresh authenticated Shield session and retries explicit Wake/Sleep up to three times, waiting for the remote protocol's power status. A failed confirmation is shown on the remote. Android may suspend or kill the phone app, so this is recovery on use rather than a promise of a permanent background connection. Shield must remain powered and reachable on the network. Long-standby reliability still needs an owner test after installation.
 7. Test an incorrect code, cancellation, and **Forget Shield** followed by pairing again. Forget removes this phone's per-IP identity and peer pin; it does not manage other clients on Shield.
 8. Verify Samsung volume, mute and HDMI 1 still work. Report the exact Shield status message for failures; do not share keys or credential files.
 

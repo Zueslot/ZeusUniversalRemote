@@ -6,9 +6,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
@@ -30,8 +35,11 @@ fun GlassPill(label: String, onClick: () -> Unit, modifier: Modifier = Modifier,
         modifier = modifier.semantics { contentDescription = label; role = Role.Button },
         shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface, border = glassBorder()) {
         Box(Modifier.fillMaxSize().glassSheen(), contentAlignment = Alignment.Center) {
-            val color = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else .4f)
-            if (icon != null) RemoteSymbol(icon, Modifier.size(24.dp), color)
+            val color = MaterialTheme.colorScheme.primary
+            if (icon != null) RemoteSymbol(icon, Modifier.size(24.dp).drawBehind {
+                drawCircle(Brush.radialGradient(listOf(color.copy(alpha = .24f), Color.Transparent),
+                    center = center, radius = 20.dp.toPx()), radius = 20.dp.toPx())
+            }, color)
             else Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, color = color)
         }
     }
@@ -63,7 +71,27 @@ fun DirectionPad(enabled: Boolean, onDirection: (RemoteIcon) -> Unit, modifier: 
         Box(Modifier.fillMaxSize().glassSheen()) {
             listOf(RemoteIcon.Up to Alignment.TopCenter, RemoteIcon.Down to Alignment.BottomCenter,
                 RemoteIcon.Left to Alignment.CenterStart, RemoteIcon.Right to Alignment.CenterEnd).forEach { (icon, alignment) ->
-                IconButton(onClick = hapticClick { onDirection(icon) }, enabled = enabled,
+                val interaction = remember { MutableInteractionSource() }
+                val pressed by interaction.collectIsPressedAsState()
+                val currentDirection by rememberUpdatedState(onDirection)
+                var repeated by remember { mutableStateOf(false) }
+                LaunchedEffect(pressed, enabled) {
+                    if (pressed && enabled) {
+                        repeated = false
+                        delay(400)
+                        // Include the initial step when the hold begins; suppress the release click.
+                        repeated = true
+                        currentDirection(icon)
+                        while (isActive) {
+                            delay(100)
+                            currentDirection(icon)
+                        }
+                    }
+                }
+                IconButton(onClick = hapticClick {
+                    if (!repeated) onDirection(icon)
+                    repeated = false
+                }, enabled = enabled, interactionSource = interaction,
                     modifier = Modifier.align(alignment).padding(6.dp).size(48.dp)
                         .semantics { contentDescription = "Navigate ${icon.name.lowercase()}" }) {
                     RemoteSymbol(icon, Modifier.size(26.dp), MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else .35f))

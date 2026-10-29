@@ -22,6 +22,7 @@ internal class ShieldTransport : AutoCloseable {
             candidate.enabledProtocols = arrayOf("TLSv1.2")
             candidate.useClientMode = true
             candidate.tcpNoDelay = true
+            candidate.keepAlive = true
             candidate.soTimeout = 15000
             candidate.connect(InetSocketAddress(host, port), 5000)
             candidate.startHandshake()

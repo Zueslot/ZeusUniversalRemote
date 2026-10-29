@@ -31,6 +31,7 @@ fun RemotePanel(
     samsung: SamsungController, tv: SamsungState, shield: ShieldController, player: ShieldState,
     devices: DeviceRepository, onEditingChanged: (Boolean) -> Unit,
     onReconnectDevices: () -> Unit,
+    onShieldUnavailable: () -> Unit,
     onPower: () -> Unit, powerBusy: Boolean,
     onOpenApps: () -> Unit, onOpenSettings: () -> Unit, onToggleTheme: () -> Unit,
     onFavorite: (String) -> Unit, favoriteAvailable: (String) -> Boolean, favoriteName: (String) -> String,
@@ -63,8 +64,9 @@ fun RemotePanel(
                 RemoteControl.SOURCE -> RoundControl("Open Samsung Source menu", RemoteIcon.Source,
                     { if (!editing) samsung.sendKey("KEY_SOURCE") }, enabled = editing || tvReady,
                     diameter = 52.dp, caption = "SOURCE")
-                RemoteControl.DPAD -> DirectionPad(editing || player.connected, { icon ->
-                    if (!editing) shield.sendKey(when (icon) {
+                RemoteControl.DPAD -> DirectionPad(true, { icon ->
+                    if (!editing && !player.connected) onShieldUnavailable()
+                    else if (!editing) shield.sendKey(when (icon) {
                         RemoteIcon.Up -> KeyEvent.KEYCODE_DPAD_UP; RemoteIcon.Down -> KeyEvent.KEYCODE_DPAD_DOWN
                         RemoteIcon.Left -> KeyEvent.KEYCODE_DPAD_LEFT; RemoteIcon.Right -> KeyEvent.KEYCODE_DPAD_RIGHT
                         else -> KeyEvent.KEYCODE_DPAD_CENTER
@@ -72,12 +74,14 @@ fun RemotePanel(
                 })
                 RemoteControl.VOLUME -> ControlRail("TV VOL", RemoteIcon.Plus, RemoteIcon.Minus, editing || tvReady,
                     { if (!editing) samsung.sendKey("KEY_VOLUP") }, { if (!editing) samsung.sendKey("KEY_VOLDOWN") })
-                RemoteControl.HOME -> GlassPill("Shield Home", { if (!editing) shield.sendKey(KeyEvent.KEYCODE_HOME) },
-                    modifier = Modifier.fillMaxSize(), enabled = editing || player.connected, icon = RemoteIcon.Home)
+                RemoteControl.HOME -> GlassPill("Shield Home", {
+                    if (!editing) { if (player.connected) shield.sendKey(KeyEvent.KEYCODE_HOME) else onShieldUnavailable() }
+                }, modifier = Modifier.fillMaxSize(), icon = RemoteIcon.Home)
                 RemoteControl.PLAY_PAUSE -> RoundControl("Shield play or pause", RemoteIcon.PlayPause,
                     { if (!editing) shield.sendKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) }, enabled = editing || player.connected)
-                RemoteControl.BACK -> GlassPill("Back", { if (!editing) shield.sendKey(KeyEvent.KEYCODE_BACK) },
-                    modifier = Modifier.fillMaxSize(), enabled = editing || player.connected, icon = RemoteIcon.Back)
+                RemoteControl.BACK -> GlassPill("Back", {
+                    if (!editing) { if (player.connected) shield.sendKey(KeyEvent.KEYCODE_BACK) else onShieldUnavailable() }
+                }, modifier = Modifier.fillMaxSize(), icon = RemoteIcon.Back)
                 RemoteControl.MEDIA -> ControlRail("SHIELD", RemoteIcon.Rewind, RemoteIcon.Forward, editing || player.connected,
                     { if (!editing) shield.sendKey(KeyEvent.KEYCODE_MEDIA_REWIND) },
                     { if (!editing) shield.sendKey(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD) })
@@ -103,6 +107,12 @@ fun RemotePanel(
                         }
                     }
                 }
+            }
+        }
+        if (!player.connected) {
+            TextButton(onClick = onShieldUnavailable,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp)) {
+                Text(if (player.busy) "Connecting to Shield…" else "Shield disconnected · Tap to connect")
             }
         }
         if (tv.selectingInput) {

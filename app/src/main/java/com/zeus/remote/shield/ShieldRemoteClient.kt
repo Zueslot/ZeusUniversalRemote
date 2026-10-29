@@ -8,14 +8,17 @@ internal class ShieldRemoteClient(private val credentials: ShieldCredentials) : 
     private val transport = ShieldTransport()
     private var features = 35 // Ping, key injection and power-status/start notifications.
     @Volatile private var ready = false
+    @Volatile var lastReceivedNanos: Long = 0
+        private set
 
-    suspend fun run(host: String, onReady: () -> Unit) {
+    suspend fun run(host: String, onReady: (Boolean) -> Unit) {
         val tls = runInterruptible(Dispatchers.IO) { credentials.context(pairing = false) }
         transport.open(host, 6466, tls)
         var configured = false
         var active = false
         while (true) {
             val message = transport.read(RemoteMessage.parser())
+            lastReceivedNanos = System.nanoTime()
             when {
                 message.hasRemoteConfigure() -> {
                     ready = false
@@ -24,7 +27,7 @@ internal class ShieldRemoteClient(private val credentials: ShieldCredentials) : 
                     check(features and 2 != 0) { "Shield does not offer remote key control" }
                     transport.send(RemoteMessage.newBuilder().setRemoteConfigure(RemoteConfigure.newBuilder()
                         .setCode1(features).setDeviceInfo(RemoteDeviceInfo.newBuilder()
-                            .setModel("Zeus Remote").setVendor("Zeus").setUnknown1(1).setUnknown2("1")
+                            .setModel(credentials.clientName).setVendor("Zeus").setUnknown1(1).setUnknown2("1")
                             .setPackageName("com.zeus.remote").setAppVersion("0.2.0"))).build())
                     configured = true
                 }
@@ -38,7 +41,7 @@ internal class ShieldRemoteClient(private val credentials: ShieldCredentials) : 
                     check(configured && active) { "Shield session negotiation is incomplete" }
                     ready = true
                     transport.controlTimeout()
-                    onReady()
+                    onReady(message.remoteStart.started)
                 }
                 message.hasRemotePingRequest() -> transport.send(RemoteMessage.newBuilder()
                     .setRemotePingResponse(RemotePingResponse.newBuilder().setVal1(message.remotePingRequest.val1)).build())

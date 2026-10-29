@@ -44,6 +44,15 @@ fun RemoteScreen(devices: DeviceRepository, onVolumeHandlerChanged: (((String) -
     val player by shieldController.state.collectAsState()
     var samsung by remember { mutableStateOf(devices.samsungAddress) }
     var shield by remember { mutableStateOf(devices.shieldAddress) }
+    val latestShield by rememberUpdatedState(shield)
+    DisposableEffect(shieldController, context) {
+        val lifecycle = (context as? androidx.lifecycle.LifecycleOwner)?.lifecycle
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) shieldController.resumeConnection(latestShield)
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
     var allowSelfSigned by remember { mutableStateOf(devices.trustSamsungCertificate) }
     var fastInput by remember { mutableStateOf(devices.fastHdmiInput) }
     var haptics by remember { mutableStateOf(devices.hapticFeedback) }
@@ -82,6 +91,11 @@ fun RemoteScreen(devices: DeviceRepository, onVolumeHandlerChanged: (((String) -
             appMessages.showSnackbar(appsState.message)
         }
     }
+    LaunchedEffect(powerState.busy, powerState.message) {
+        if (!powerState.busy && (powerState.message.contains("not confirmed") || powerState.message.startsWith("Power request failed"))) {
+            appMessages.showSnackbar("Power wasn't confirmed. Check Settings → Power & Wake for details.")
+        }
+    }
     BackHandler(page != "Remote") { page = "Remote" }
 
     LaunchedEffect(page) { if (page == "Settings") wakeMac = devices.samsungMac }
@@ -101,6 +115,10 @@ fun RemoteScreen(devices: DeviceRepository, onVolumeHandlerChanged: (((String) -
                 if (page == "Remote") {
                     RemotePanel(samsungController, tv, shieldController, player, devices, { editingLayout = it },
                         onReconnectDevices = ::reconnectDevices,
+                        onShieldUnavailable = {
+                            if (shield.isBlank() || player.pairingRequired || (!player.busy && !player.connected)) page = "Settings"
+                            else if (!player.busy) shieldController.reconnectSaved(shield)
+                        },
                         onPower = powerController::toggle, powerBusy = powerState.busy,
                         onOpenApps = { page = "Apps" }, onOpenSettings = { page = "Settings" },
                         onToggleTheme = { dark = !dark; devices.darkTheme = dark },

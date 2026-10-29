@@ -12,10 +12,13 @@ internal class ShieldPairingClient(private val credentials: ShieldCredentials) :
     private val encoding = Options.Encoding.newBuilder().setType(Options.Encoding.EncodingType.ENCODING_TYPE_HEXADECIMAL).setSymbolLength(6).build()
 
     suspend fun start(host: String) {
-        val tls = runInterruptible(Dispatchers.IO) { credentials.context(pairing = true) }
+        val tls = runInterruptible(Dispatchers.IO) {
+            credentials.preparePairing()
+            credentials.context(pairing = true)
+        }
         transport.open(host, 6467, tls)
         transport.send(envelope().setPairingRequest(PairingRequest.newBuilder()
-            .setServiceName("atvremote").setClientName("Zeus Universal Remote")).build())
+            .setServiceName("atvremote").setClientName(credentials.clientName)).build())
         check(receive().hasPairingRequestAck()) { "Shield did not acknowledge pairing request" }
         transport.send(envelope().setOptions(Options.newBuilder().addInputEncodings(encoding)
             .setPreferredRole(Options.RoleType.ROLE_TYPE_INPUT)).build())

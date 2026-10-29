@@ -23,6 +23,8 @@ fun ShieldControls(address: String, controller: ShieldController) {
         Text(state.message)
         if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         Text("Turn Shield on and select its HDMI input to see the pairing code. Pair here; do not use Android's Bluetooth pairing screen.")
+        Text("Multiple phones: install the latest Zeus Remote on each phone and pair each once. Every installation has its own identity; pairing another phone should not replace yours.",
+            style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { controller.pair(address) }, enabled = !state.busy && !state.needsPin) { Text("Pair Shield") }
             OutlinedButton(onClick = { controller.connect(address) }, enabled = !state.busy && !state.needsPin && !state.connected) { Text("Connect Shield") }

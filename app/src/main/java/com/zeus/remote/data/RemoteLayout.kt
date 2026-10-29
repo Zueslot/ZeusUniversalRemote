@@ -33,7 +33,7 @@ data class RemoteLayout(val controls: Map<RemoteControl, ControlPlacement>) {
     fun update(control: RemoteControl, placement: ControlPlacement) = copy(controls = controls +
         (control to placement.sanitized(Default[control])))
 
-    fun encode(): String = JSONObject().put("version", 3).put("controls", JSONObject().apply {
+    fun encode(): String = JSONObject().put("version", 6).put("controls", JSONObject().apply {
         RemoteControl.entries.forEach { control ->
             val placement = get(control).sanitized(Default[control])
             put(control.name, JSONObject().put("x", placement.x.toDouble()).put("y", placement.y.toDouble()).put("scale", placement.scale.toDouble()))
@@ -48,7 +48,7 @@ data class RemoteLayout(val controls: Map<RemoteControl, ControlPlacement>) {
             RemoteControl.VOLUME to ControlPlacement(0f, .65f),
             RemoteControl.HOME to ControlPlacement(.5f, .67f),
             RemoteControl.PLAY_PAUSE to ControlPlacement(.65f, .60f),
-            RemoteControl.BACK to ControlPlacement(.95f, .67f),
+            RemoteControl.BACK to ControlPlacement(.05f, .67f),
             RemoteControl.MEDIA to ControlPlacement(1f, .65f),
             RemoteControl.SMARTTUBE to ControlPlacement(.05f, .90f),
             RemoteControl.NUVIO to ControlPlacement(.35f, .90f),
@@ -62,9 +62,9 @@ data class RemoteLayout(val controls: Map<RemoteControl, ControlPlacement>) {
             val json = JSONObject(value)
             val version = json.optInt("version")
             // Apply the requested aligned four-app layout once; subsequent edits remain editable.
-            if (version !in 1..3 || version == 2) Default else {
+            if (version !in 1..6 || version == 2) Default else {
                 val entries = json.optJSONObject("controls") ?: JSONObject()
-                val decoded = RemoteLayout(RemoteControl.entries.associateWith { control ->
+                var decoded = RemoteLayout(RemoteControl.entries.associateWith { control ->
                     val fallback = Default[control]
                     entries.optJSONObject(control.name)?.let { item ->
                         ControlPlacement(item.optDouble("x", fallback.x.toDouble()).toFloat(),
@@ -72,6 +72,8 @@ data class RemoteLayout(val controls: Map<RemoteControl, ControlPlacement>) {
                             item.optDouble("scale", 1.0).toFloat()).sanitized(fallback)
                     } ?: fallback
                 })
+                // Apply the requested Back/Settings swap once; later layout edits are preserved.
+                if (version < 6) decoded = decoded.update(RemoteControl.BACK, decoded[RemoteControl.BACK].copy(x = .05f))
                 // Make room for the restored top-left title without resetting the user's other controls.
                 val power = decoded[RemoteControl.POWER]
                 if (version == 1 && power.x < .7f && power.y < .1f) {

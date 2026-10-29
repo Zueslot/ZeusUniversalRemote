@@ -4,6 +4,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RemoteLayoutTest {
+    @Test fun backMovesLeftOnceWithoutResettingOtherControls() {
+        val old = "{\"version\":5,\"controls\":{\"BACK\":{\"x\":0.95,\"y\":0.67,\"scale\":1.2},\"HOME\":{\"x\":0.4,\"y\":0.7}}}"
+        val migrated = RemoteLayout.decode(old)
+        assertEquals(.05f, migrated[RemoteControl.BACK].x, 0f)
+        assertEquals(.67f, migrated[RemoteControl.BACK].y, 0f)
+        assertEquals(1.2f, migrated[RemoteControl.BACK].scale, 0f)
+        assertEquals(.4f, migrated[RemoteControl.HOME].x, 0f)
+        val edited = migrated.update(RemoteControl.BACK, ControlPlacement(.3f, .5f))
+        assertEquals(edited, RemoteLayout.decode(edited.encode()))
+    }
     @Test fun previousLayoutRealignsOnceAndNewEditsArePreserved() {
         val previous = "{\"version\":2,\"controls\":{\"BACK\":{\"x\":0,\"y\":0,\"scale\":1.6}}}"
         assertEquals(RemoteLayout.Default, RemoteLayout.decode(previous))

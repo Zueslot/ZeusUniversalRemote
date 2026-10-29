@@ -31,6 +31,7 @@ import com.zeus.remote.data.*
 import com.zeus.remote.ui.glassBorder
 import com.zeus.remote.ui.glassSheen
 import com.zeus.remote.ui.GlassPill
+import com.zeus.remote.ui.RemoteIcon
 import kotlin.math.roundToInt
 
 private val LayoutSaver = Saver<RemoteLayout, String>(save = { it.encode() }, restore = { RemoteLayout.decode(it) })
@@ -49,7 +50,7 @@ fun RemoteLayoutEditor(
     var selectedName by rememberSaveable { mutableStateOf(RemoteControl.POWER.name) }
     var showTools by rememberSaveable { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
-    var menuX by rememberSaveable { mutableStateOf(.05f) }
+    var menuX by rememberSaveable { mutableStateOf(.95f) }
     var menuY by rememberSaveable { mutableStateOf(.67f) }
     val selected = ActiveRemoteControls.find { it.name == selectedName } ?: RemoteControl.POWER
     SideEffect { onEditingChanged(editing) }
@@ -82,7 +83,8 @@ fun RemoteLayoutEditor(
                 }
             }) {
             GlassPill(if (editing) "Editing" else "Menu", { menuExpanded = true },
-                modifier = Modifier.size(76.dp, 48.dp).semantics { contentDescription = "Remote menu. Drag to move menu." })
+                modifier = Modifier.size(76.dp, 48.dp).semantics { contentDescription = "Remote menu. Drag to move menu." },
+                icon = RemoteIcon.Settings)
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                 Text(connectionStatus, Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
                 if (editing) {

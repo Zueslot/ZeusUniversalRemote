@@ -17,11 +17,21 @@ import java.security.PrivateKey
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import java.util.Date
+import java.util.UUID
 import javax.net.ssl.*
 import javax.security.auth.x500.X500Principal
 
 /** Per-device identity: private key never leaves Android Keystore; peer pin is not backed up. */
 internal class ShieldCredentials(context: Context, private val host: String) {
+    // A shared CN lets Android TV replace another phone's pairing. Keep one unique
+    // identity per installation, independent of the Shield IP and app display name.
+    val clientName: String = synchronized(identityLock) {
+        val preferences = context.getSharedPreferences("shield_client_identity", Context.MODE_PRIVATE)
+        val id = preferences.getString("installation_id", null) ?: UUID.randomUUID().toString().also {
+            check(preferences.edit().putString("installation_id", it).commit()) { "Could not save this phone's Shield identity." }
+        }
+        "Zeus Remote $id"
+    }
     private val deviceId = MessageDigest.getInstance("SHA-256").digest(host.toByteArray())
         .joinToString("") { "%02x".format(it) }
     private val alias = "zeus_shield_$deviceId"
@@ -29,6 +39,12 @@ internal class ShieldCredentials(context: Context, private val host: String) {
     private val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
     fun isPaired(): Boolean = store.containsAlias(alias) && pinFile.baseFile.exists()
+
+    /** Called only after the user explicitly starts pairing, preserving old sessions on update. */
+    fun preparePairing() {
+        val certificate = store.getCertificate(alias) as? X509Certificate ?: return
+        if (certificate.subjectX500Principal != X500Principal("CN=$clientName")) forget()
+    }
 
     private fun identity(): KeyStore.PrivateKeyEntry {
         if (!store.containsAlias(alias)) {
@@ -41,7 +57,7 @@ internal class ShieldCredentials(context: Context, private val host: String) {
                     // See https://github.com/google/conscrypt/issues/718 and /issues/1201.
                     .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                     .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1, KeyProperties.SIGNATURE_PADDING_RSA_PSS)
-                    .setCertificateSubject(X500Principal("CN=Zeus Universal Remote"))
+                    .setCertificateSubject(X500Principal("CN=$clientName"))
                     .setCertificateSerialNumber(BigInteger.ONE)
                     .setCertificateNotBefore(Date(System.currentTimeMillis() - 86400000L))
                     .setCertificateNotAfter(Date(System.currentTimeMillis() + 10L * 365 * 86400000))
@@ -98,4 +114,6 @@ internal class ShieldCredentials(context: Context, private val host: String) {
     }
 
     private fun fingerprint(cert: X509Certificate) = MessageDigest.getInstance("SHA-256").digest(cert.encoded)
+
+    private companion object { val identityLock = Any() }
 }

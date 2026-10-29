@@ -4,13 +4,16 @@ import android.content.Context
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import android.view.KeyEvent
 
 data class ShieldState(
     val message: String = "Pair Shield to enable navigation.",
     val busy: Boolean = false,
     val needsPin: Boolean = false,
-    val connected: Boolean = false
+    val connected: Boolean = false,
+    val isOn: Boolean? = null,
+    val pairingRequired: Boolean = false
 )
 
 /** Owned by the screen's coroutine scope. Public actions and state updates run on Main. */
@@ -23,6 +26,7 @@ class ShieldController(context: Context, private val scope: CoroutineScope) : Au
     private var pairing: ShieldPairingClient? = null
     private var remote: ShieldRemoteClient? = null
     private var host = ""
+    private var reconnectEnabled = false
 
     private fun stop() {
         generation++
@@ -32,6 +36,7 @@ class ShieldController(context: Context, private val scope: CoroutineScope) : Au
     }
 
     fun disconnect() {
+        reconnectEnabled = false
         stop()
         mutableState.value = ShieldState("Shield disconnected.")
     }
@@ -39,6 +44,7 @@ class ShieldController(context: Context, private val scope: CoroutineScope) : Au
     /** Restore an existing identity without initiating a fresh PIN pairing prompt. */
     fun reconnectSaved(address: String) {
         if (!privateIpv4(address.trim())) return
+        reconnectEnabled = true
         stop()
         val run = generation
         val target = address.trim()
@@ -60,6 +66,7 @@ class ShieldController(context: Context, private val scope: CoroutineScope) : Au
     fun pair(address: String) {
         if (!valid(address)) return
         stop()
+        reconnectEnabled = false
         host = address.trim()
         val run = generation
         mutableState.value = ShieldState("Connecting to Shield pairing...", busy = true)
@@ -117,6 +124,7 @@ class ShieldController(context: Context, private val scope: CoroutineScope) : Au
     fun connect(address: String) {
         if (!valid(address)) return
         stop()
+        reconnectEnabled = true
         host = address.trim()
         val run = generation
         mutableState.value = ShieldState("Connecting to authenticated Shield control...", busy = true)
@@ -136,26 +144,27 @@ class ShieldController(context: Context, private val scope: CoroutineScope) : Au
                 val client = ShieldRemoteClient(identity)
                 remote = client
                 try {
-                    client.run(host) {
-                        attempts = 0
-                        mutableState.value = ShieldState("Shield authenticated. Navigation is ready.", connected = true)
+                    client.run(host) { isOn ->
+                        if (generation == run) {
+                            attempts = 0
+                            mutableState.value = ShieldState("Shield authenticated. Navigation is ready.", connected = true, isOn = isOn)
+                        }
                     }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     if (generation != run) return@launch
-                    if (generateSequence<Throwable>(e) { it.cause }.any { it is javax.net.ssl.SSLException }) {
-                        mutableState.value = ShieldState("Shield TLS authentication failed. Pair again if credentials changed. ${detail(e)}")
+                    if (ShieldReconnectPolicy.requiresPairing(e)) {
+                        mutableState.value = ShieldState("Shield certificate verification failed. Pair again if credentials changed. ${detail(e)}", pairingRequired = true)
                         return@launch
                     }
-                    attempts++
-                    if (attempts >= 5) {
-                        mutableState.value = ShieldState("Shield unavailable after five attempts: ${detail(e)} Tap Connect to retry.")
-                        return@launch
-                    }
-                    mutableState.value = ShieldState("Shield disconnected: ${detail(e)} Reconnecting ($attempts/5)...", busy = true)
-                } finally { client.close() }
-                delay((1000L shl (attempts - 1).coerceIn(0, 4)))
+                    attempts = (attempts + 1).coerceAtMost(30)
+                    mutableState.value = ShieldState("Shield disconnected: ${detail(e)} Retrying automatically...", busy = true)
+                } finally {
+                    client.close()
+                    if (remote === client) remote = null
+                }
+                delay(ShieldReconnectPolicy.delayMillis(attempts))
             }
         }
     }
@@ -180,6 +189,7 @@ class ShieldController(context: Context, private val scope: CoroutineScope) : Au
 
     suspend fun sendPowerCommand(wake: Boolean): Boolean {
         val client = remote ?: return false
+        val run = generation
         if (!state.value.connected) return false
         return try {
             client.sendKey(if (wake) KeyEvent.KEYCODE_WAKEUP else KeyEvent.KEYCODE_SLEEP)
@@ -188,14 +198,46 @@ class ShieldController(context: Context, private val scope: CoroutineScope) : Au
             throw e
         } catch (e: Exception) {
             client.close()
-            mutableState.value = ShieldState("Shield power request failed: ${detail(e)}", busy = true)
+            if (run == generation && remote === client) {
+                mutableState.value = ShieldState("Shield power request failed: ${detail(e)}", busy = true)
+            }
             false
         }
+    }
+
+    /** Refresh stale foreground sessions without re-pairing or undoing an explicit Disconnect. */
+    fun resumeConnection(address: String) {
+        if (!reconnectEnabled || state.value.needsPin || state.value.pairingRequired) return
+        val last = remote?.lastReceivedNanos ?: 0L
+        if (!state.value.connected || System.nanoTime() - last > 15_000_000_000L) reconnectSaved(address)
+    }
+
+    /** One tap owns reconnect + bounded retries; only explicit Wake/Sleep commands are repeated. */
+    suspend fun setPower(address: String, wake: Boolean): Boolean {
+        if (!privateIpv4(address.trim()) || state.value.needsPin || state.value.pairingRequired) return false
+        // Never trust a socket carried across phone/Shield sleep for a power request.
+        reconnectSaved(address)
+        repeat(3) { attempt ->
+            if (!reconnectEnabled || state.value.needsPin || state.value.pairingRequired) return false
+            val ready = withTimeoutOrNull(12000) {
+                state.first { it.connected || it.pairingRequired || (!it.busy && !it.needsPin) }
+            }
+            if (ready?.pairingRequired == true || (ready != null && !ready.connected)) return false
+            if (ready?.connected == true && sendPowerCommand(wake)) {
+                val confirmed = withTimeoutOrNull(4000) { state.first { it.connected && it.isOn == wake } }
+                if (confirmed != null) return true
+            }
+            if (!reconnectEnabled || state.value.needsPin || state.value.pairingRequired) return false
+            if (attempt < 2) reconnectSaved(address)
+        }
+        mutableState.value = state.value.copy(message = "Shield did not confirm power. Reconnection will continue; check Shield power and network.")
+        return false
     }
 
     fun forget(address: String) {
         if (!valid(address)) return
         stop()
+        reconnectEnabled = false
         val run = generation
         mutableState.value = ShieldState("Removing this Shield's local credentials...", busy = true)
         task = scope.launch {
@@ -219,5 +261,5 @@ class ShieldController(context: Context, private val scope: CoroutineScope) : Au
         else -> error.message ?: error.javaClass.simpleName
     }
 
-    override fun close() = stop()
+    override fun close() { reconnectEnabled = false; stop() }
 }
